@@ -42,17 +42,34 @@ func (hh *HTTPHandler) SetOriginPolicy(origins string) *HTTPHandler {
 }
 
 // ReadUserIP gets the IP address of the connected user, trusting all optional headers
-func ReadUserIP(r *http.Request) string {
-	IPAddress := r.Header.Get("X-Real-Ip")
-	if IPAddress == "" {
-		IPAddress = r.Header.Get("X-Forwarded-For")
-	}
-	if IPAddress == "" {
-		IPAddress = r.RemoteAddr
+func ReadUserIP(r *http.Request) (string, error) {
+	//Get IP from the X-REAL-IP header
+	ip := r.Header.Get("X-REAL-IP")
+	netIP := net.ParseIP(ip)
+	if netIP != nil {
+		return ip, nil
 	}
 
-	IPAddress = strings.Split(IPAddress, ",")[0]
-	return IPAddress
+	//Get IP from X-FORWARDED-FOR header
+	ips := r.Header.Get("X-FORWARDED-FOR")
+	splitIps := strings.Split(ips, ",")
+	for _, ip := range splitIps {
+		netIP := net.ParseIP(ip)
+		if netIP != nil {
+			return ip, nil
+		}
+	}
+
+	//Get IP from RemoteAddr
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return "", err
+	}
+	netIP = net.ParseIP(ip)
+	if netIP != nil {
+		return ip, nil
+	}
+	return "", fmt.Errorf("No valid ip found")
 }
 
 // ServeHTTP implements the standard http.Handler interface.
@@ -67,7 +84,15 @@ func (hh *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ipText := strings.TrimPrefix(r.URL.Path, "/")
 
 	if ipText == "me" {
-		ipText = ReadUserIP(r)
+		userIP, err := ReadUserIP(r)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			const parseIPError = `{"error": "could not parse client IP address"}`
+			w.Write([]byte(parseIPError))
+			return
+		}
+
+		ipText = userIP
 	}
 
 	// nice error message when missing data
