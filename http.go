@@ -41,6 +41,20 @@ func (hh *HTTPHandler) SetOriginPolicy(origins string) *HTTPHandler {
 	return hh
 }
 
+// ReadUserIP gets the IP address of the connected user, trusting all optional headers
+func ReadUserIP(r *http.Request) string {
+	IPAddress := r.Header.Get("X-Real-Ip")
+	if IPAddress == "" {
+		IPAddress = r.Header.Get("X-Forwarded-For")
+	}
+	if IPAddress == "" {
+		IPAddress = r.RemoteAddr
+	}
+
+	IPAddress = strings.Split(IPAddress, ",")[0]
+	return IPAddress
+}
+
 // ServeHTTP implements the standard http.Handler interface.
 func (hh *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Set headers
@@ -51,6 +65,10 @@ func (hh *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// attempt to parse IP from query
 	ipText := strings.TrimPrefix(r.URL.Path, "/")
+
+	if ipText == "me" {
+		ipText = ReadUserIP(r)
+	}
 
 	// nice error message when missing data
 	if ipText == "" {
